@@ -429,10 +429,9 @@ try {
         const hook = globalThis.__walledTest;
         hook.originalMessageBox = dialog.showMessageBox;
         hook.googleDialogs = [];
-        hook.googleResponse = 0;
         dialog.showMessageBox = async (_window, options) => {
           hook.googleDialogs.push(options);
-          return { response: hook.googleResponse, checkboxChecked: false };
+          return { response: 0, checkboxChecked: false };
         };
       });
       try {
@@ -441,18 +440,8 @@ try {
         assert.deepEqual(await T(() => globalThis.__walledTest.externalOpened), []);
 
         await clickInView(id, '#google');
-        const notice = await until(() => T(() => globalThis.__walledTest.googleDialogs[0]), 5000, 'Google sign-in explanation');
-        assert.match(notice.message, /unavailable inside Walled DLP/);
-        assert.match(notice.detail, /only to your browser session/);
-        assert.deepEqual(notice.buttons, ['Back to Sign-In', 'Open Website in Browser']);
-        assert.equal(notice.defaultId, 0);
-        assert.equal(notice.cancelId, 0);
-        assert.deepEqual(await T(() => globalThis.__walledTest.externalOpened), []);
-        assert.equal(await readSite(id, 'location.pathname'), '/auth/login');
-
-        await T(() => { globalThis.__walledTest.googleResponse = 1; });
-        await clickInView(id, '#google');
-        await until(() => T(() => globalThis.__walledTest.externalOpened.length > 0), 5000, 'confirmed Google browser handoff');
+        await until(() => T(() => globalThis.__walledTest.externalOpened.length > 0), 5000, 'direct Google browser handoff');
+        assert.deepEqual(await T(() => globalThis.__walledTest.googleDialogs), []);
         assert.deepEqual(await T(() => globalThis.__walledTest.externalOpened), [url]);
         assert.equal(await readSite(id, 'location.pathname === "/auth/login" && !!document.querySelector("input[type=email]")'), true);
 

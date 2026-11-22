@@ -1,3 +1,4 @@
+// /Users/anurag/waller-ai/walled-dlp/walled-dlp/react/src/App.tsx
 import { useEffect, useState } from 'react';
 import type { BackendStatus, ShellState } from '../shared/types';
 

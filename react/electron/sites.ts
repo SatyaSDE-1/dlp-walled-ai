@@ -1,3 +1,4 @@
+// /Users/anurag/waller-ai/walled-dlp/walled-dlp/react/electron/sites.ts
 import DLP_CONFIG from '../../server/dlp/inject/config.json';
 import type { SiteId } from '../shared/types';
 

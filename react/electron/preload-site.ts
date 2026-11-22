@@ -1,3 +1,5 @@
+// /Users/anurag/waller-ai/walled-dlp/walled-dlp/react/electron/preload-site.ts
+
 /// <reference lib="dom" />
 import { ipcRenderer } from 'electron';
 import { installWalledGuard } from '../../server/dlp/inject/guard.js';

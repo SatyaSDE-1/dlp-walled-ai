@@ -1,3 +1,4 @@
+// /Users/anurag/waller-ai/walled-dlp/walled-dlp/react/electron/main.ts
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
@@ -37,9 +38,9 @@ function toolbarUrl(devUrl: string | undefined): string {
 }
 
 let googleSignInPending = false;
-async function openExternal(url: URL, googleSite?: string, emailRoutedToGoogle = false): Promise<void> {
+async function openExternal(url: URL, emailRoutedSite?: string): Promise<void> {
   try {
-    if (googleSite) {
+    if (emailRoutedSite) {
       if (googleSignInPending || !win || win.isDestroyed()) return;
       googleSignInPending = true;
       const parent = win;
@@ -47,11 +48,11 @@ async function openExternal(url: URL, googleSite?: string, emailRoutedToGoogle =
         const { response } = await dialog.showMessageBox(parent, {
           type: 'info',
           message: 'Google sign-in is unavailable inside Walled DLP',
-          detail: (emailRoutedToGoogle ? `${googleSite} routed this email sign-in to Google.\n\n` : '')
-            + `You can open ${googleSite} in your default browser and sign in with Google there. `
+          detail: `${emailRoutedSite} routed this email sign-in to Google.\n\n`
+            + `You can open ${emailRoutedSite} in your default browser and sign in with Google there. `
             + 'That sign-in applies only to your browser session. Walled DLP protects activity in its own window.\n\n'
-            + `To use ${googleSite} here, go back and choose another sign-in method available for your account or continue as a guest.`,
-          buttons: [emailRoutedToGoogle ? 'Back to ChatGPT' : 'Back to Sign-In', 'Open Website in Browser'],
+            + `To use ${emailRoutedSite} here, go back and choose another sign-in method available for your account or continue as a guest.`,
+          buttons: ['Back to ChatGPT', 'Open Website in Browser'],
           defaultId: 0,
           cancelId: 0,
         });

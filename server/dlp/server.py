@@ -1,3 +1,4 @@
+# /Users/anurag/waller-ai/walled-dlp/walled-dlp/server/dlp/server.py
 """Local IPC server: lets the Electron app drive the existing scanner / guard / dialog code.
 
 Transport

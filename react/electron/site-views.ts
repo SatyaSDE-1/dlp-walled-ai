@@ -53,7 +53,7 @@ export class SiteViews extends EventEmitter {
     private readonly win: BrowserWindow,
     private readonly sites: Record<SiteId, SiteDef>,
     private readonly preloadPath: string,
-    private readonly openExternal: (url: URL, googleSite?: string, emailRoutedToGoogle?: boolean) => void,
+    private readonly openExternal: (url: URL, emailRoutedSite?: string) => void,
   ) {
     super();
     for (const site of Object.values(sites)) {
@@ -134,7 +134,7 @@ export class SiteViews extends EventEmitter {
       tab.signInUntil = Date.now() + SIGN_IN_WINDOW_MS;
       tab.emailSignIn = action === 'email-sign-in';
     } else if (action === 'google') {
-      this.openExternal(new URL(tab.site.url), tab.site.name);
+      this.openExternal(new URL(tab.site.url));
     } else if (action === 'retry-chatgpt-completion' && tab.chatGptRecoveries < MAX_CHATGPT_RECOVERIES
       && isChatGptSignInDocument(tab.site, frame.url)) {
       tab.chatGptRecoveries += 1;
@@ -280,7 +280,7 @@ export class SiteViews extends EventEmitter {
       setImmediate(() => {
         if (this.current() !== tab || tab.preloadFailed || wc.isDestroyed()) return;
         if (isChatGptSignInDocument(site, wc.mainFrame.url)) this.load(tab, site.url, CHATGPT_UNCACHED_LOAD);
-        this.openExternal(new URL(site.url), site.name, true);
+        this.openExternal(new URL(site.url), site.name);
       });
     };
     wc.setWindowOpenHandler(({ url, postBody, referrer }) => {

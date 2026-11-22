@@ -29,7 +29,7 @@ MAX_ARCHIVE_DEPTH = 4  # Includes the uploaded archive itself.
 MAX_ARCHIVE_MEMBERS = 10_000  # Across all nested archives.
 
 # --------------------------------------------------------------------------- #
-# Supported sites
+# Supported site
 # --------------------------------------------------------------------------- #
 RESPONSE_SELECTORS = {
     "chatgpt": [
