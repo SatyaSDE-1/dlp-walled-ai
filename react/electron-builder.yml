@@ -1,0 +1,36 @@
+appId: ai.walled.dlp
+productName: Walled DLP
+asar: true
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+directories:
+  output: dist
+files:
+  - dist-electron/**/*.cjs
+  - dist-renderer/**/*
+  - '!**/*.map'
+extraResources:
+  - from: ../server
+    to: server
+    filter:
+      - dlp/**/*.py
+      - dlp/inject/guard.js
+      - dlp/inject/config.json
+      - requirements.txt
+  - from: .packaging/python
+    to: python
+    filter:
+      - '**/*'
+      - '!**/__pycache__/**'
+      - '!**/*.pyc'
+mac:
+  category: public.app-category.productivity
+  minimumSystemVersion: '14.0'
+  identity: '-'
+  timestamp: 'none'
+  notarize: false
+  target:
+    - target: dir
+      arch: arm64
