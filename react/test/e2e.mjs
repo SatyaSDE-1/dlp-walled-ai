@@ -334,6 +334,50 @@ try {
     }
   });
 
+  await step('Google One Tap stays quiet until a user activates the page', async () => {
+    const seen = await T(async () => {
+      const wc = globalThis.__walledTest.views.all.get('chatgpt').webContents;
+      // Chromium rejects the invalid mode before it contacts a provider.
+      const attempt = `navigator.credentials.get({
+        identity: {
+          providers: [{ configURL: 'https://accounts.google.com/gsi/fedcm.json', clientId: 'test' }],
+          mode: 'invalid',
+        },
+      }).catch(error => error.name)`;
+      return {
+        automatic: await wc.executeJavaScript(attempt),
+        activated: await wc.executeJavaScript(attempt, true),
+      };
+    });
+    assert.deepEqual(seen, { automatic: 'NotAllowedError', activated: 'TypeError' });
+  });
+
+  await step('the legacy Google One Tap iframe is blocked', async () => {
+    const reason = await T(async () => {
+      const wc = globalThis.__walledTest.views.all.get('perplexity').webContents;
+      const url = 'https://accounts.google.com/gsi/iframe/select?client_id=test';
+      let onFailure;
+      let timeout;
+      try {
+        const failure = new Promise((resolve, reject) => {
+          onFailure = (_event, _code, description, failedUrl) => {
+            if (failedUrl === url) resolve(description);
+          };
+          wc.on('did-fail-load', onFailure);
+          timeout = setTimeout(() => reject(new Error('The One Tap iframe did not fail to load')), 5000);
+        });
+        await wc.executeJavaScript(`void document.body.appendChild(Object.assign(document.createElement('iframe'), {
+          src: ${JSON.stringify(url)}, hidden: true,
+        }))`);
+        return await failure;
+      } finally {
+        wc.off('did-fail-load', onFailure);
+        clearTimeout(timeout);
+      }
+    });
+    assert.equal(reason, 'ERR_BLOCKED_BY_CLIENT');
+  });
+
   await step('toolbar exposes only the fixed API (no ipcRenderer / require)', async () => {
     const seen = await shellPage.evaluate(() => ({
       keys: Object.keys(window.walledShell).sort(),

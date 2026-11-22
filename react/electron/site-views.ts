@@ -242,6 +242,10 @@ export class SiteViews extends EventEmitter {
     profile.setUserAgent(chromeUserAgent());
     profile.setPermissionRequestHandler((_contents, permission, reply) => reply(permission === 'clipboard-sanitized-write'));
     profile.setPermissionCheckHandler((_contents, permission) => permission === 'clipboard-sanitized-write');
+    // Older versions of One Tap open the automatic chooser in a dedicated iframe.
+    profile.webRequest.onBeforeRequest({ urls: ['https://accounts.google.com/gsi/iframe/select*'] }, (details, reply) => {
+      reply({ cancel: details.resourceType === 'subFrame' && new URL(details.url).pathname === '/gsi/iframe/select' });
+    });
 
     const view = new WebContentsView({
       webPreferences: {
