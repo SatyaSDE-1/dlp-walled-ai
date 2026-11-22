@@ -1,0 +1,43 @@
+{
+  "marker": "WALLED_SENSITIVE",
+  "color": "#d00000",
+  "maxFileBytes": 31457280,
+  "sites": {
+    "chatgpt": {
+      "name": "ChatGPT",
+      "hosts": [
+        "chatgpt.com"
+      ],
+      "startUrl": "https://chatgpt.com/",
+      "composerSelectors": [
+        "#prompt-textarea",
+        "#mobile-composer-prompt",
+        "textarea[id$='-composer-prompt']",
+        "div.ProseMirror[contenteditable='true']"
+      ],
+      "sendSelectors": [
+        "[data-testid='send-button']",
+        "button[aria-label='Send prompt']",
+        "button[aria-label='Send message']",
+        "button[aria-label*='Send' i]"
+      ]
+    },
+    "perplexity": {
+      "name": "Perplexity",
+      "hosts": [
+        "perplexity.ai"
+      ],
+      "startUrl": "https://www.perplexity.ai/",
+      "composerSelectors": [
+        "#ask-input",
+        "div[contenteditable='true'][role='textbox']",
+        "textarea"
+      ],
+      "sendSelectors": [
+        "button[aria-label='Submit']",
+        "button[data-testid='submit-button']",
+        "button[aria-label='Send']"
+      ]
+    }
+  }
+}

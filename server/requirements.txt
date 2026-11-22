@@ -1,0 +1,6 @@
+pypdf>=4.0
+pypdfium2>=4.0
+Pillow>=10.1
+numpy
+rapidocr>=2.0
+onnxruntime
