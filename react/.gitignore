@@ -1,8 +1,0 @@
-node_modules/
-dist-electron/
-dist-renderer/
-dist/
-.packaging/
-.env
-.env.*
-!.env.example
