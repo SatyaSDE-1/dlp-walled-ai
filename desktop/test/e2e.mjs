@@ -2,29 +2,58 @@
 // Python child process) and points the two tabs at local mock pages, because the sandbox cannot reach
 // chatgpt.com / perplexity.ai. Run under a display:  xvfb-run -a node test/e2e.mjs
 //
-// What this proves:   embedded views, navigation UI, layout, isolation/security settings, navigation
-//                     allowlist, Python child lifecycle (start, ping, crash -> restart, clean shutdown).
-// What it does NOT:   anything about the real sites, prompt/file interception, or the native dialog.
+// Tests the shell, site preloads, and Python child against local ChatGPT and Perplexity fixtures.
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
-import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from 'playwright';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.resolve(here, '..');
-const require = createRequire(import.meta.url);
+const { color: responseColor } = JSON.parse(await readFile(
+  new URL('../../server/dlp/inject/config.json', import.meta.url), 'utf8',
+));
 
 // --- mock sites -----------------------------------------------------------------------------------
-const page = (title) => `<!doctype html><title>${title}</title><body><h1>${title}</h1><a id="l" href="/second">next</a>` +
-  `<script>window.__boot = Math.random(); window.__title = ${JSON.stringify(title)}</script></body>`;
+const page = (title) => {
+  const perplexity = title.startsWith('MockPerplexity');
+  return `<!doctype html><title>${title}</title><body><h1>${title}</h1><a id="l" href="/second">next</a>
+    <form>
+      <textarea id="${perplexity ? 'ask-input' : 'prompt-textarea'}"></textarea>
+      <button data-testid="${perplexity ? 'submit-button' : 'send-button'}">Send</button>
+    </form>
+    <input id="attachment" type="file" multiple>
+    <script>
+      window.__boot = Math.random();
+      window.sent = [];
+      window.picked = [];
+      const form = document.querySelector('form');
+      const prompt = form.querySelector('textarea');
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        window.sent.push(prompt.value);
+      });
+      prompt.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          form.requestSubmit(form.querySelector('button'));
+        }
+      });
+      document.getElementById('attachment').addEventListener('change', event => {
+        window.picked.push(Array.from(event.target.files, file => file.name));
+      });
+    </script></body>`;
+};
 function mockServer(title) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const srv = http.createServer((req, res) => {
       res.setHeader('content-type', 'text/html');
       res.end(page(`${title} ${req.url}`));
     });
+    srv.once('error', reject);
     srv.listen(0, '127.0.0.1', () => resolve({ srv, url: `http://127.0.0.1:${srv.address().port}/` }));
   });
 }
@@ -54,7 +83,7 @@ async function until(fn, timeout = 15000, what = 'condition') {
 // --- launch ---------------------------------------------------------------------------------------
 const chatgpt = await mockServer('MockChatGPT');
 const perplexity = await mockServer('MockPerplexity');
-const profile = path.join(process.env.TMPDIR ?? '/tmp', `walled-e2e-${Date.now()}`);
+const profile = await mkdtemp(path.join(tmpdir(), 'walled-e2e-'));
 
 const app = await electron.launch({
   args: ['--no-sandbox', '--disable-gpu', '--host-resolver-rules=MAP accounts.google.com ~NOTFOUND',
@@ -64,11 +93,12 @@ const app = await electron.launch({
     ...process.env,
     WALLED_E2E: '1',
     WALLED_E2E_SITES: JSON.stringify({ chatgpt: chatgpt.url, perplexity: perplexity.url }),
-    WALLED_PYTHON: process.env.WALLED_PYTHON ?? 'python3',
     WALLED_BACKEND_ARGS: '--no-ocr-warmup --auto-answer cancel',
   },
 });
 const T = (fn, arg) => app.evaluate(fn, arg);            // run in the Electron main process
+const readSite = (id, script) => T((_electron, { id, script }) =>
+  globalThis.__walledTest.views.all.get(id).webContents.executeJavaScript(script), { id, script });
 
 const shellPage = await until(async () =>
   app.windows().find((w) => w.url().includes('dist-renderer')), 20000, 'toolbar window');
@@ -107,6 +137,7 @@ try {
   });
 
   await step('Google One Tap requires user activation for FedCM', async () => {
+    await until(() => readSite('chatgpt', '!navigator.userActivation.isActive'), 7000, 'no transient activation');
     const seen = await T(async () => {
       const wc = globalThis.__walledTest.views.all.get('chatgpt').webContents;
       const attempt = `navigator.credentials.get({
@@ -267,6 +298,94 @@ try {
     assert.match(await shellPage.getByTestId('backend-status').innerText(), /Python backend: Ready · v\d/);
   });
 
+  await step('both site preloads hold marked prompts and send clean prompts', async () => {
+    for (const [id, name] of [['chatgpt', 'ChatGPT'], ['perplexity', 'Perplexity']]) {
+      await shellPage.getByRole('tab', { name }).click();
+      const submit = (text) => T(async (_electron, { id, text }) => {
+        const wc = globalThis.__walledTest.views.all.get(id).webContents;
+        await wc.executeJavaScript(`Object.assign(document.querySelector('textarea'), { value: ${JSON.stringify(text)} }).focus()`);
+        wc.focus();
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+      }, { id, text });
+      await submit('ordinary prompt');
+      await until(() => readSite(id, 'window.sent.length === 1'), 5000, 'clean prompt submitted');
+
+      await T(() => {
+        const hook = globalThis.__walledTest;
+        hook.originalCall = hook.backend.call;
+        hook.pendingPrompt = undefined;
+        hook.backend.call = async function (op, payload, ...args) {
+          const decision = await hook.originalCall.call(this, op, payload, ...args);
+          if (op === 'prompt') {
+            hook.lastPrompt = { payload, decision };
+            // Hold the decision to observe that the page has not received the prompt.
+            await new Promise((resolve) => { hook.pendingPrompt = resolve; });
+          }
+          return decision;
+        };
+      });
+      try {
+        await submit('marked WALLED_SENSITIVE prompt');
+        await until(() => T(() => !!globalThis.__walledTest.pendingPrompt), 5000, 'marked prompt inspected');
+        assert.deepEqual(await T(() => globalThis.__walledTest.lastPrompt), {
+          payload: { site: name, text: 'marked WALLED_SENSITIVE prompt' }, decision: { allow: false },
+        });
+        assert.deepEqual(await readSite(id, 'window.sent'), ['ordinary prompt']);
+      } finally {
+        await T(() => {
+          const hook = globalThis.__walledTest;
+          hook.pendingPrompt?.();
+          hook.backend.call = hook.originalCall;
+        });
+      }
+      assert.equal(await readSite(id, 'document.querySelector("textarea").value'), 'marked WALLED_SENSITIVE prompt');
+    }
+  });
+
+  await step('file picker replays only files approved by Python', async () => {
+    const clean = path.join(profile, 'clean.txt');
+    const marked = path.join(profile, 'marked.txt');
+    await Promise.all([writeFile(clean, 'ordinary file'), writeFile(marked, 'WALLED_SENSITIVE')]);
+    await T(async (_electron, files) => {
+      const wc = globalThis.__walledTest.views.all.get('perplexity').webContents;
+      wc.debugger.attach('1.3');
+      try {
+        const { root } = await wc.debugger.sendCommand('DOM.getDocument');
+        const { nodeId } = await wc.debugger.sendCommand('DOM.querySelector', { nodeId: root.nodeId, selector: '#attachment' });
+        await wc.debugger.sendCommand('DOM.setFileInputFiles', { nodeId, files });
+      } finally {
+        wc.debugger.detach();
+      }
+    }, [marked, clean]);
+    await until(() => readSite('perplexity', 'window.picked.length === 1'), 5000, 'file selection replayed');
+    assert.deepEqual(await readSite('perplexity', 'window.picked'), [['clean.txt']]);
+  });
+
+  await step('streamed assistant text uses the configured response colour', async () => {
+    const colors = await readSite('chatgpt', `(() => {
+      document.body.insertAdjacentHTML('beforeend', '<div data-message-author-role="assistant"><span id="answer">answer</span></div>'
+        + '<div data-message-author-role="user"><span id="question">question</span></div>');
+      const expected = document.body.appendChild(document.createElement('span'));
+      expected.style.color = ${JSON.stringify(responseColor)};
+      return ['answer', 'question'].map(id => getComputedStyle(document.getElementById(id)).color)
+        .concat(getComputedStyle(expected).color);
+    })()`);
+    assert.equal(colors[0], colors[2]);
+    assert.notEqual(colors[1], colors[0]);
+  });
+
+  await step('the request API inspects JSON supplied by a desktop caller', async () => {
+    const decisions = await T(async () => {
+      const { backend } = globalThis.__walledTest;
+      const inspect = (text) => backend.call('request', {
+        site: 'ChatGPT', body_b64: Buffer.from(JSON.stringify({ text })).toString('base64'),
+      });
+      return [await inspect('ordinary text'), await inspect('WALLED_SENSITIVE')];
+    });
+    assert.deepEqual(decisions, [{ allow: true }, { allow: false }]);
+  });
+
   await step('round trip to the existing Guard: clean prompt allowed; marker prompt hits (auto) dialog -> Cancel', async () => {
     const r = await T(async () => {
       const b = globalThis.__walledTest.backend;
@@ -325,6 +444,7 @@ try {
   await app.close().catch(() => {});
   chatgpt.srv.close();
   perplexity.srv.close();
+  await rm(profile, { recursive: true, force: true });
 }
 
 await step('quitting the app leaves no orphaned Python process', async () => {

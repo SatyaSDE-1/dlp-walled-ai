@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { BrowserWindow, WebContentsView, session } from 'electron';
+import { BrowserWindow, WebContentsView, session, type IpcMainInvokeEvent } from 'electron';
 import { TOOLBAR_HEIGHT, type ShellState, type SiteId } from '../shared/types';
-import { isNavigationAllowed, type SiteDef } from './sites';
+import { isDlpDocument, isNavigationAllowed, SITE_CONFIG_ARG, type SiteDef } from './sites';
 
 /** One persistent profile shared by both sites, so logins survive restarts. */
 export const SITE_PARTITION = 'persist:walled-sites';
@@ -28,6 +28,7 @@ const ALLOWED_PERMISSIONS = new Set(['clipboard-sanitized-write']);
 export class SiteViews extends EventEmitter {
   private readonly views = new Map<SiteId, WebContentsView>();
   private active: SiteId;
+  private scanEpoch = 0;
 
   constructor(
     private readonly win: BrowserWindow,
@@ -46,14 +47,15 @@ export class SiteViews extends EventEmitter {
   // ---------------------------------------------------------------- public
   select(id: SiteId): void {
     if (!this.sites[id]) throw new Error(`unknown site: ${id}`);
+    if (this.active !== id) this.scanEpoch += 1;
+    this.active = id;
     let view = this.views.get(id);
     if (!view) {
       view = this.createView(this.sites[id]);
       this.views.set(id, view);
       this.win.contentView.addChildView(view);
-      void view.webContents.loadURL(this.sites[id].url);
+      this.load(view, this.sites[id].url);
     }
-    this.active = id;
     for (const [key, v] of this.views) v.setVisible(key === id);
     this.layout();
     this.emitState();
@@ -70,7 +72,23 @@ export class SiteViews extends EventEmitter {
   }
 
   reload(): void {
-    this.current()?.webContents.reload();
+    const view = this.current();
+    if (view) view.webContents.reload();
+    else this.select(this.active);
+  }
+
+  get inspectionEpoch(): number {
+    return this.scanEpoch;
+  }
+
+  scanSite(event: IpcMainInvokeEvent): SiteDef | undefined {
+    const frame = event.senderFrame;
+    const site = this.sites[this.active];
+    if (frame && event.sender === this.current()?.webContents && !event.sender.isDestroyed()
+      && frame === event.sender.mainFrame && isDlpDocument(site, frame.url)) {
+      return site;
+    }
+    return undefined;
   }
 
   getState(): ShellState {
@@ -91,6 +109,16 @@ export class SiteViews extends EventEmitter {
     return this.views;
   }
 
+  dispose(): void {
+    const views = [...this.views.values()];
+    this.views.clear();
+    this.scanEpoch += 1;
+    for (const view of views) {
+      if (!this.win.isDestroyed()) this.win.contentView.removeChildView(view);
+      if (!view.webContents.isDestroyed()) view.webContents.close();
+    }
+  }
+
   // --------------------------------------------------------------- internals
   private current(): WebContentsView | undefined {
     return this.views.get(this.active);
@@ -98,6 +126,14 @@ export class SiteViews extends EventEmitter {
 
   private emitState(): void {
     this.emit('state', this.getState());
+  }
+
+  private load(view: WebContentsView, url: string): void {
+    void view.webContents.loadURL(url).catch((error: { code?: string }) => {
+      if (!view.webContents.isDestroyed() && error.code !== 'ERR_ABORTED') {
+        console.warn('Could not load site:', error.code ?? 'navigation failed');
+      }
+    });
   }
 
   /** Every view fills the area below the toolbar (hidden ones too, so they are right when shown). */
@@ -123,6 +159,7 @@ export class SiteViews extends EventEmitter {
       webPreferences: {
         partition: SITE_PARTITION,
         preload: this.preloadPath,
+        additionalArguments: [SITE_CONFIG_ARG + JSON.stringify(site)],
         // Website content is untrusted: no Node, isolated world, OS-level sandbox.
         contextIsolation: true,
         nodeIntegration: false,
@@ -138,7 +175,7 @@ export class SiteViews extends EventEmitter {
 
     // Links that open a new window: stay in this view if the destination is allowed, else hand to the OS browser.
     wc.setWindowOpenHandler(({ url }) => {
-      if (isNavigationAllowed(site, url)) void wc.loadURL(url);
+      if (isNavigationAllowed(site, url)) this.load(view, url);
       else this.openExternal(url);
       return { action: 'deny' };
     });
@@ -151,7 +188,21 @@ export class SiteViews extends EventEmitter {
       }
     };
     wc.on('will-navigate', guard);
-    wc.on('will-redirect', guard);
+    wc.on('will-redirect', (event) => { if (event.isMainFrame) guard(event); });
+
+    wc.on('did-start-navigation', (event) => {
+      if (event.isMainFrame && this.current() === view) this.scanEpoch += 1;
+    });
+    wc.on('preload-error', (_event, _preload, error) => {
+      if (this.views.get(site.id) !== view) return;
+      console.error(`Could not install DLP protection for ${site.name}:`, error);
+      this.views.delete(site.id);
+      this.scanEpoch += 1;
+      view.setVisible(false);
+      this.win.contentView.removeChildView(view);
+      wc.close();
+      if (this.active === site.id) this.emitState();
+    });
 
     for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated'] as const) {
       wc.on(ev as 'did-navigate', () => {

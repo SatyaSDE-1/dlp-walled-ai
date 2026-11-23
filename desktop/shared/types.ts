@@ -54,6 +54,7 @@ export const IPC = {
   state: 'shell:state',
   getBackendStatus: 'shell:get-backend-status',
   backendStatus: 'shell:backend-status',
+  scanSiteAction: 'site:scan',
 } as const;
 
 /** Height (px) of the React toolbar. The site views are laid out directly below it. */

@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 const out = path.join(mkdtempSync(path.join(tmpdir(), 'walled-sites-')), 'sites.mjs');
 await build({ entryPoints: ['electron/sites.ts'], outfile: out, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' });
-const { loadSites, isNavigationAllowed } = await import(pathToFileURL(out).href);
+const { loadSites, isNavigationAllowed, isDlpDocument } = await import(pathToFileURL(out).href);
 
 const prod = loadSites({});
 const chatgpt = prod.chatgpt;
@@ -51,4 +51,16 @@ test('test overrides are ignored unless WALLED_E2E=1', () => {
   assert.equal(t.url, 'http://127.0.0.1:9/');
   assert.ok(isNavigationAllowed(t, 'http://127.0.0.1:9/x'));
   assert.ok(!isNavigationAllowed(t, 'http://127.0.0.2:9/x'));
+  assert.ok(!isNavigationAllowed(t, 'http://127.0.0.1:10/x'));
+  assert.ok(isDlpDocument(t, 'http://127.0.0.1:9/x'));
+  assert.ok(!isDlpDocument(t, 'http://127.0.0.1:10/x'));
+});
+
+test('inspection only applies to configured site documents', () => {
+  assert.ok(isDlpDocument(chatgpt, 'https://chatgpt.com/c/123'));
+  assert.ok(isDlpDocument(perplexity, 'https://www.perplexity.ai/search/x'));
+  assert.ok(!isDlpDocument(chatgpt, 'https://chatgpt.com/auth/login'));
+  assert.ok(!isDlpDocument(chatgpt, 'https://auth.openai.com/log-in'));
+  assert.ok(!isDlpDocument(chatgpt, 'https://www.perplexity.ai/search/x'));
+  assert.ok(!isDlpDocument(chatgpt, 'https://chatgpt.com:8080/c/123'));
 });
