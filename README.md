@@ -10,13 +10,13 @@ prompt or file the backend approved.
 
 ## Start the desktop app
 
-Use Node.js 22.12+ and Python 3.9+. From the repository root on macOS or Linux:
+Use Node.js 22.12+ and Python 3.9+. The app runs from source; it is not packaged as an installer. From the repository root on macOS or Linux:
 
 ```sh
 python3 -m venv server/.venv
 server/.venv/bin/python -m pip install -r server/requirements.txt
-cd react
-npm ci
+cd desktop
+npm install
 npm start
 ```
 
@@ -25,30 +25,25 @@ with `server/.venv/Scripts/python.exe`. The desktop build and launcher select `W
 the environment under `server/.venv`, then the system interpreter. Set `WALLED_PYTHON` to an absolute
 interpreter path to use a different environment.
 
-Use `npm run dev` in `react/` to launch Electron with the Vite toolbar dev server on loopback. Open the
+Use `npm run dev` in `desktop/` to launch Electron with the Vite toolbar dev server on loopback. Open the
 desired site from the toolbar. Each site keeps its login in a separate Electron profile across restarts.
 
 RapidOCR handles image and scanned PDF text. The optional Tesseract fallback uses the system
 `tesseract` executable and the `pytesseract` Python package. Linux uses Zenity, KDialog or Tk
 for confirmation. Windows uses Tk and macOS uses the system dialog through `osascript`.
 
-## Package for macOS
+## Demo checklist
 
-On an Apple Silicon Mac running macOS 14 or later with native ARM64 Node.js 22.12+, run from the repository root:
+Run on both ChatGPT and Perplexity, logged in or out:
 
-```sh
-cd react
-npm ci
-npm run dist
-```
-
-Open `react/dist/mac-arm64/Walled DLP.app` in Finder. The build downloads a checksum-verified
-standalone CPython runtime, installs the backend's production Python dependencies, and fetches the
-default RapidOCR models. The app includes those files and uses macOS's built-in `osascript` for
-confirmation dialogs. It can launch without a separate Python installation or the development `.venv`.
-
-This build is ad-hoc signed for local use. Distribution to other Macs through Gatekeeper requires
-Developer ID signing and Apple notarization.
+| Test | Expected |
+|---|---|
+| Prompt without `WALLED_SENSITIVE` | Sends with no dialog |
+| Prompt with `WALLED_SENSITIVE` | Native dialog names it a text prompt and shows the prompt |
+| `.txt`, PDF or image containing the marker | Native dialog names a file and shows the file name, before upload |
+| Continue | The prompt or upload proceeds normally |
+| Cancel | Blocked; the draft stays in the composer |
+| Any AI reply | Text is red (`#d00000`, set in `server/dlp/inject/config.json`) |
 
 ## Try the guard
 
@@ -77,8 +72,8 @@ reply per request. Enter `{"id":1,"op":"ping"}`, wait for its reply, then enter
 
 | Path | Role |
 |---|---|
-| `react/src/` | React toolbar |
-| `react/electron/` | Main process, embedded views, isolated preloads and Python process manager |
+| `desktop/src/` | React toolbar |
+| `desktop/electron/` | Main process, embedded views, isolated preloads and Python process manager |
 | `server/dlp/server.py` | Python stdio IPC server |
 | `server/dlp/guard.py`, `scanner.py`, `ocr.py` | Inspection policy, file scanning and OCR |
 | `server/dlp/dialog.py`, `dialog_tk.py` | Native Continue/Cancel dialog |
@@ -89,7 +84,7 @@ reply per request. Enter `{"id":1,"op":"ping"}`, wait for its reply, then enter
 From `server/`, install `requirements-dev.txt` into the Python environment and run
 `python -m pytest tests` for scanner, dialog, guard and IPC checks.
 
-From `react/`, use `npm run typecheck` and `npm run test:unit`. The Electron end-to-end suite uses
+From `desktop/`, use `npm run typecheck` and `npm run test:unit`. The Electron end-to-end suite uses
 the JavaScript Playwright development dependency to drive the installed Electron app against local
 mock pages. On Linux, `npm run test:e2e` uses `xvfb-run`. On macOS, run
 `npm run build && node test/e2e.mjs` from a desktop session.

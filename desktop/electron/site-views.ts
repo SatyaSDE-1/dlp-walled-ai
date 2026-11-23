@@ -172,6 +172,7 @@ export class SiteViews extends EventEmitter {
     });
     view.setBackgroundColor('#ffffff');
     const wc = view.webContents;
+    if (process.env.WALLED_DEVTOOLS === '1') wc.openDevTools({ mode: 'detach' }); // debugging aid
 
     // Links that open a new window: stay in this view if the destination is allowed, else hand to the OS browser.
     wc.setWindowOpenHandler(({ url }) => {

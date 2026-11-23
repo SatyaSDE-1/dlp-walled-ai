@@ -34,8 +34,15 @@ MAX_ARCHIVE_MEMBERS = 10_000  # Across all nested archives.
 RESPONSE_SELECTORS = {
     "chatgpt": [
         "[data-message-role='assistant']",
+        "[data-response-body]",
+        "[data-markdown-text-style='assistant-message']",
         "[data-message-author-role='assistant']",
         "[data-turn='assistant']",
+        "article[data-testid^='conversation-turn-']:has([data-message-author-role='assistant'])",
+        "[data-response-body]",
+        "[data-markdown-text-style='assistant-message']",
+        "div.markdown.prose",
+        "div.markdown",
     ],
     "perplexity": [
         "[data-workflow-final-text] .prose",
@@ -47,6 +54,7 @@ RESPONSE_SELECTORS = {
 
 _USER_MESSAGE_SELECTORS = [
     "[data-message-role='user']",
+    "[data-user-message-bubble]",
     "[data-message-author-role='user']",
     "[data-turn='user']",
     "[data-testid='user-message']",

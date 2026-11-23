@@ -73,7 +73,7 @@ function installWalledGuard(CFG, site, scan) {
     // Skip enclosures of user content too, since text colour inherits.
     const scope = excludedSelectors.length ? `:not(${excluded}, ${excluded} *, :has(${excluded}))` : '';
     const css =
-      `${answer}${scope}, ${answer} *${scope} {` +
+      `:root:root:root ${answer}${scope}, :root:root:root ${answer} *${scope} {` +
       ` color: ${CFG.color} !important;` +
       ` -webkit-text-fill-color: ${CFG.color} !important; }`;
     let apply;
